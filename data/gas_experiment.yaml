@@ -1,0 +1,17 @@
+
+train: /public/liupengli/WorkSpace/Gas/txt/train_experiment.txt 
+# train: /home/liupengli/Gas/lala.txt  # 
+# train: /home/liupengli/DataSets/dc_object_infrad_231130_5w/val/labels/train_label.txt  # 
+# val: /home/liupengli/DataSets/InfradData/new_txt/total_val.txt  # 
+# test: /home/liupengli/DataSets/InfradData/new_txt/total_val.txt
+
+#val: /public/liupengli/WorkSpace/Gas/txt/val_experiment.txt
+val: /public/liupengli/DataSets/Gas/test_20240806_experiment/test.txt
+#val: /public/liupengli/WorkSpace/Gas/txt/test_list.txt
+# val: /home/liupengli/Gas/lala.txt
+# val: /home/liupengli/DataSets/InfradData/txt/history/total_val_5595.txt
+
+nc: 1
+# class names
+names: ['gas']
+# names: ['person', 'car', 'cyclist', 'truck', 'bus']

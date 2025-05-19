@@ -1,0 +1,52 @@
+# YOLOv5 🚀 by Ultralytics, GPL-3.0 license
+# COCO128 dataset https://www.kaggle.com/ultralytics/coco128 (first 128 images from COCO train2017) by Ultralytics
+# Example usage: python train.py --data coco128.yaml
+# parent
+# ├── yolov5
+# └── datasets
+#     └── coco128  ← downloads here (7 MB)
+
+
+# Train/val/test sets as 1) dir: path/to/imgs, 2) file: path/to/imgs.txt, or 3) list: [path/to/imgs1, path/to/imgs2, ..]
+# 训练时
+path: ..//..//..//..//datasets/TLGDM/reset
+  # dataset root dir
+#train: Training_set_jpg.txt  # train images (relative to 'path') 128 images
+val: DATA_SET_HIT//hit_move_outdoor_simple.txt  # val images (relative to 'path') 128 images
+train: DATA_SET_HIT//Training_set_HIT.txt  # train images (relative to 'path') 128 images#val: test_small.txt  # val images (relative to 'path') 128 images
+#val: val_experiment.txt
+#test: Testset_20240826/test_all/test.txt  # test images (optional)
+#test_20240806_experiment//test.txt
+
+
+# 输出测试集上指标时
+#path: ../IOD-Video/data/TLGDM/Testset_zhaoxiaoqian
+#train: ''
+#val: ''
+#test: test.txt
+
+# Classes
+names:
+  0: gas
+# Download script/URL (optional)
+#download: https://ultralytics.com/assets/coco128.zip
+
+#
+#####验证小数据集时
+#path: ..//..//datasets/TLGDM/
+#  # dataset root dir
+#train: train_small.txt  # train images (relative to 'path') 128 images
+#val: test_small.txt  # val images (relative to 'path') 128 images
+#test: ''  # test images (optional)
+#
+## 输出测试集上指标时
+##path: ../IOD-Video/data/TLGDM/Testset_zhaoxiaoqian
+##train: ''
+##val: ''
+##test: test.txt
+#
+## Classes
+#names:
+#  0: gas
+## Download script/URL (optional)
+##download: https://ultralytics.com/assets/coco128.zip
