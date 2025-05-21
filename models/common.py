@@ -43,7 +43,7 @@ def autopad(k, p=None, d=1):  # kernel, padding, dilation
     return p
 
 
-class Conv(nn.Module):
+class Conv2(nn.Module):
     # Standard convolution with args(ch_in, ch_out, kernel, stride, padding, groups, dilation, activation)
     default_act = nn.SiLU()  # default activation
 
@@ -62,11 +62,6 @@ class Conv(nn.Module):
     def forward_fuse(self, x):
         return self.act(self.conv(x))
 
-
-class DWConv(Conv):
-    # Depth-wise convolution
-    def __init__(self, c1, c2, k=1, s=1, d=1, act=True):  # ch_in, ch_out, kernel, stride, dilation, activation
-        super().__init__(c1, c2, k, s, g=math.gcd(c1, c2), d=d, act=act)
 
 
 class DWConvTranspose2d(nn.ConvTranspose2d):
@@ -111,12 +106,12 @@ class TransformerBlock(nn.Module):
         return self.tr(p + self.linear(p)).permute(1, 2, 0).reshape(b, self.c2, w, h)
 
 
-class Bottleneck(nn.Module):
+class BottleneckF(nn.Module):
     # Standard bottleneck
     def __init__(self, c1, c2, shortcut=True, g=1, e=0.5):  # ch_in, ch_out, shortcut, groups, expansion
         super().__init__()
         c_ = int(c2 * e)  # hidden channels
-        self.cv1 = Conv(c1, c_, 1, 1)
+        self.cv1 = Conv2(c1, c_, 1, 1)
         self.cv2 = Conv(c_, c2, 3, 1, g=g)
         self.add = shortcut and c1 == c2
 
@@ -157,6 +152,32 @@ class CrossConv(nn.Module):
         return x + self.cv2(self.cv1(x)) if self.add else self.cv2(self.cv1(x))
 
 
+class C3F(nn.Module):
+    # CSP Bottleneck with 3 convolutions
+    def __init__(self, c1, c2, n=1, shortcut=True, g=1, e=0.5):  # ch_in, ch_out, number, shortcut, groups, expansion
+        super().__init__()
+        c_ = int(c2 * e)  # hidden channels
+        self.cv1 = Conv(c1, c_, 1, 1)
+        self.cv2 = Conv(c1, c_, 1, 1)
+        self.cv3 = Conv(2 * c_, c2, 1)  # optional act=FReLU(c2)
+        self.m = nn.Sequential(*(BottleneckF(c_, c_, shortcut, g, e=1.0) for _ in range(n)))
+
+    def forward(self, x):
+        return self.cv3(torch.cat((self.m(self.cv1(x)), self.cv2(x)), 1))
+
+
+class Bottleneck(nn.Module):
+    # Standard bottleneck
+    def __init__(self, c1, c2, shortcut=True, g=1, e=0.5):  # ch_in, ch_out, shortcut, groups, expansion
+        super().__init__()
+        c_ = int(c2 * e)  # hidden channels
+        self.cv1 = Conv(c1, c_, 1, 1)
+        self.cv2 = Conv(c_, c2, 3,1, g=g)
+        self.add = shortcut and c1 == c2
+
+    def forward(self, x):
+        return x + self.cv2(self.cv1(x)) if self.add else self.cv2(self.cv1(x))
+
 class C3(nn.Module):
     # CSP Bottleneck with 3 convolutions
     def __init__(self, c1, c2, n=1, shortcut=True, g=1, e=0.5):  # ch_in, ch_out, number, shortcut, groups, expansion
@@ -165,10 +186,11 @@ class C3(nn.Module):
         self.cv1 = Conv(c1, c_, 1, 1)
         self.cv2 = Conv(c1, c_, 1, 1)
         self.cv3 = Conv(2 * c_, c2, 1)  # optional act=FReLU(c2)
+        print('ff',c1,c2)
         self.m = nn.Sequential(*(Bottleneck(c_, c_, shortcut, g, e=1.0) for _ in range(n)))
-
     def forward(self, x):
         return self.cv3(torch.cat((self.m(self.cv1(x)), self.cv2(x)), 1))
+
 
 
 class C3x(C3):
@@ -1228,6 +1250,279 @@ class C3_csla(nn.Module):
 #     def forward(self, x):
 #         return self.cv3(torch.cat((self.m(self.cv1(x)), self.cv2(x)), 1))
 
+
+class Conv(nn.Module):
+    """
+    RepVGG 块，用于构建RepVGG网络。
+
+    Args:
+        in_channels (int): 输入通道数。
+        out_channels (int): 输出通道数。
+        kernel_size (int, optional): 卷积核大小。默认为3。
+        stride (int, optional): 卷积步长。默认为1。
+        padding (int, optional): 卷积填充。默认为0。
+        dilation (int, optional): 卷积扩张率。默认为1。
+        groups (int, optional): 卷积分组数。默认为1。
+        padding_mode (str, optional): 卷积填充模式。默认为'zeros'。
+        deploy (bool, optional): 是否为部署模式。默认为False。
+        use_se (bool, optional): 是否使用SE块。默认为False。
+
+    Attributes:
+        deploy (bool): 是否为部署模式。
+        groups (int): 卷积分组数。
+        in_channels (int): 输入通道数。
+        nonlinearity (nn.Module): 非线性激活函数。
+        se (nn.Module): SE块。
+        rbr_reparam (nn.Conv2d): 重参数化卷积层。
+        rbr_identity (nn.BatchNorm2d): 恒等批量归一化层。
+        rbr_dense (nn.Sequential): 密集卷积层。
+        rbr_1x1 (nn.Sequential): 1x1卷积层。
+    """
+
+    def __init__(self, in_channels, out_channels, kernel_size=1,
+                 stride=1,  p=None, g=1, d=1, padding_mode='zeros', act=True):
+        super(Conv, self).__init__()
+
+        self.groups = g
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        if act:
+            self.nonlinearity = nn.SiLU()
+        else:
+            self.nonlinearity = nn.Identity()
+        # self.nonlinearity = nn.SiLU()
+
+
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride, autopad(kernel_size, p, d), groups=g, dilation=d, bias=False)
+        self.bn = nn.BatchNorm2d(out_channels)
+        self.conv2=None
+        # if stride==1:
+        self.conv2 =nn.Sequential(nn.Conv2d(in_channels, out_channels, 1, stride, 0, groups=1, dilation=1, bias=False),nn.BatchNorm2d(out_channels))
+        self.t3=False
+        if in_channels==out_channels:
+            self.t3=True
+            self.conv3 =nn.Sequential(nn.Conv2d(in_channels, out_channels, kernel_size, stride, autopad(kernel_size, p, d), groups=out_channels, dilation=d, bias=False),nn.BatchNorm2d(out_channels))
+
+            # self.rbr_1x1 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1,
+            #                              stride=stride,
+            #                              padding=0, groups=groups,
+            #                              padding_mode=padding_mode,bias=False)
+            # self.BN_out = nn.BatchNorm2d(num_features=out_channels)
+
+    # def switch_to_deploy(self):
+    #     """
+    #     切换到部署模式。
+    #     """
+    #     if hasattr(self, 'rbr_1x1'):
+    #         kernel, bias = self.get_equivalent_kernel_bias_twice()
+    #         self.rbr_reparam = nn.Conv2d(in_channels=self.rbr_dense.conv.in_channels,
+    #                                      out_channels=self.rbr_dense.conv.out_channels,
+    #                                      kernel_size=self.rbr_dense.conv.kernel_size, stride=self.rbr_dense.conv.stride,
+    #                                      padding=self.rbr_dense.conv.padding, dilation=self.rbr_dense.conv.dilation,
+    #                                      groups=self.rbr_dense.conv.groups, bias=True)
+    #         self.rbr_reparam.weight.data = kernel
+    #         self.rbr_reparam.bias.data = bias
+    #         for para in self.parameters():
+    #             para.detach_()
+    #         self.rbr_dense = self.rbr_reparam
+    #         self.__delattr__('rbr_1x1')
+    #         if hasattr(self, 'rbr_identity'):
+    #             self.__delattr__('rbr_identity')
+    #         if hasattr(self, 'id_tensor'):
+    #             self.__delattr__('id_tensor')
+    #         if hasattr(self, 'BN_out'):
+    #             self.__delattr__('BN_out')
+    #         if hasattr(self, 'se'):
+    #             self.__delattr__('se')
+    #         if hasattr(self, 'rbr_reparam'):
+    #             self.__delattr__('rbr_reparam')
+    #
+    #         self.deploy = True
+    #
+    # def get_equivalent_kernel_bias_twice(self):
+    #     kernel, bias = self.get_equivalent_kernel_bias()
+    #     rbr_reparam_1 = nn.Conv2d(in_channels=self.rbr_dense.conv.in_channels,
+    #                                  out_channels=self.rbr_dense.conv.out_channels,
+    #                                  kernel_size=self.rbr_dense.conv.kernel_size, stride=self.rbr_dense.conv.stride,
+    #                                  padding=self.rbr_dense.conv.padding, dilation=self.rbr_dense.conv.dilation,
+    #                                  groups=self.rbr_dense.conv.groups, bias=True)
+    #     rbr_reparam_1.weight.data = kernel
+    #     rbr_reparam_1.bias.data = bias
+    #     rbr_reparam_2 = nn.Sequential()
+    #     rbr_reparam_2.add_module('conv', rbr_reparam_1)
+    #     rbr_reparam_2.add_module('bn', self.BN_out)
+    #     kernel_1, bias_1 = self._fuse_bn_tensor(rbr_reparam_2)
+    #     return kernel_1, bias_1
+    #
+    # def get_equivalent_kernel_bias(self):
+    #     """
+    #     获取等效卷积核和偏置。
+    #
+    #     Returns:
+    #         tuple: 等效卷积核和偏置。
+    #     """
+    #     kernel3x3, bias3x3 = self._fuse_bn_tensor(self.rbr_dense)
+    #     kernel1x1, bias1x1 = self._fuse_bn_tensor(self.rbr_1x1)
+    #     kernelid, biasid = self._fuse_bn_tensor(self.rbr_identity)
+    #     return kernel3x3 + self._pad_1x1_to_3x3_tensor(kernel1x1) + kernelid, bias3x3 + bias1x1 + biasid
+    #
+    # def _pad_1x1_to_3x3_tensor(self, kernel1x1):
+    #     """
+    #     将1x1卷积核填充为3x3卷积核。
+    #
+    #     Args:
+    #         kernel1x1 (Tensor): 1x1卷积核。
+    #
+    #     Returns:
+    #         Tensor: 3x3卷积核。
+    #     """
+    #     if kernel1x1 is None:
+    #         return 0
+    #     else:
+    #         return torch.nn.functional.pad(kernel1x1, [1, 1, 1, 1])
+    #
+    def _fuse_bn_tensor(self, branch):
+        """
+        融合批量归一化层。
+
+        Args:
+            branch (nn.Module): 批量归一化层。
+
+        Returns:
+            tuple: 融合后的卷积核和偏置。
+        """
+        if branch is None:
+            return 0, 0
+        if isinstance(branch, nn.Sequential):
+            kernel = branch.conv.weight
+            running_mean = branch.bn.running_mean
+            running_var = branch.bn.running_var
+            gamma = branch.bn.weight
+            beta = branch.bn.bias
+            eps = branch.bn.eps
+            std = (running_var + eps).sqrt()
+            t = (gamma / std).reshape(-1, 1, 1, 1)
+            return kernel * t, beta - running_mean * gamma / std
+
+        elif isinstance(branch, nn.Identity):
+            if not hasattr(self, 'id_tensor'):
+                input_dim = self.in_channels // self.groups
+                kernel_value = np.zeros((self.in_channels, input_dim, 3, 3), dtype=np.float32)
+                for i in range(self.in_channels):
+                    kernel_value[i, i % input_dim, 1, 1] = 1
+                self.id_tensor = torch.from_numpy(kernel_value).to("cuda")
+            return self.id_tensor, torch.zeros(self.out_channels, device=self.id_tensor.device)
+        else:
+            assert isinstance(branch, nn.Conv2d) and branch.kernel_size == (1, 1)
+            kernel = branch.weight
+            bias = branch.bias if branch.bias is not None else torch.zeros(branch.out_channels, device=kernel.device)
+            return kernel, bias
+
+    def forward(self, inputs):
+
+        if self.t3:
+
+            # if self.conv2 is None:
+            # return self.nonlinearity(self.bn(self.conv(inputs))+self.conv3(inputs))
+
+            return self.nonlinearity(self.bn(self.conv(inputs))+self.conv3(inputs)+self.conv2(inputs))
+        else:
+
+            # return self.nonlinearity(self.bn(self.conv(inputs)))
+            # else:
+            return self.nonlinearity(self.bn(self.conv(inputs))+self.conv2(inputs))
+
+
+
+
+    def _pad_1x1_to_3x3_tensor(self, kernel1x1):
+        if kernel1x1 is None:
+            return 0
+        else:
+            return torch.nn.functional.pad(kernel1x1, [1, 1, 1, 1])
+
+    # def _fuse_bn_tensor(self, branch):
+    #     if branch is None:
+    #         return 0, 0
+    #     if isinstance(branch, ConvModule):
+    #         kernel = branch.conv.weight
+    #         bias = branch.conv.bias
+    #         return kernel, bias
+    #     elif isinstance(branch, nn.BatchNorm2d):
+    #         if not hasattr(self, 'id_tensor'):
+    #             input_dim = self.in_channels // self.groups
+    #             kernel_value = np.zeros((self.in_channels, input_dim, 3, 3), dtype=np.float32)
+    #             for i in range(self.in_channels):
+    #                 kernel_value[i, i % input_dim, 1, 1] = 1
+    #             self.id_tensor = torch.from_numpy(kernel_value).to(branch.weight.device)
+    #         kernel = self.id_tensor
+    #         running_mean = branch.running_mean
+    #         running_var = branch.running_var
+    #         gamma = branch.weight
+    #         beta = branch.bias
+    #         eps = branch.eps
+    #         std = (running_var + eps).sqrt()
+    #         t = (gamma / std).reshape(-1, 1, 1, 1)
+    #         return kernel * t, beta - running_mean * gamma / std
+
+    def get_equivalent_kernel_bias(self):
+        kernel3x3, bias3x3 = self._fuse_bn_tensor(self.rbr_dense)
+        kernel = kernel3x3 + self._pad_1x1_to_3x3_tensor(self.rbr_1x1.weight)
+        bias = bias3x3
+
+        if self.rbr_identity is not None:
+            input_dim = self.in_channels // self.groups
+            kernel_value = np.zeros((self.in_channels, input_dim, 3, 3), dtype=np.float32)
+            for i in range(self.in_channels):
+                kernel_value[i, i % input_dim, 1, 1] = 1
+            id_tensor = torch.from_numpy(kernel_value).to(self.rbr_1x1.weight.device)
+            kernel = kernel + id_tensor
+        return kernel, bias
+
+    def _fuse_extra_bn_tensor(self, kernel, bias, branch):
+        assert isinstance(branch, nn.BatchNorm2d)
+        running_mean = branch.running_mean - bias  # remove bias
+        running_var = branch.running_var
+        gamma = branch.weight
+        beta = branch.bias
+        eps = branch.eps
+        std = (running_var + eps).sqrt()
+        t = (gamma / std).reshape(-1, 1, 1, 1)
+        return kernel * t, beta - running_mean * gamma / std
+
+    def switch_to_deploy(self):
+        if hasattr(self, 'rbr_reparam'):
+            return
+        kernel, bias = self.get_equivalent_kernel_bias()
+        self.rbr_reparam = nn.Conv2d(in_channels=self.rbr_dense.conv.in_channels,
+                                     out_channels=self.rbr_dense.conv.out_channels,
+                                     kernel_size=self.rbr_dense.conv.kernel_size, stride=self.rbr_dense.conv.stride,
+                                     padding=self.rbr_dense.conv.padding, dilation=self.rbr_dense.conv.dilation,
+                                     groups=self.rbr_dense.conv.groups, bias=True)
+        self.rbr_reparam.weight.data = kernel
+        self.rbr_reparam.bias.data = bias
+        for para in self.parameters():
+            para.detach_()
+        self.__delattr__('rbr_dense')
+        self.__delattr__('rbr_1x1')
+        if hasattr(self, 'rbr_identity'):
+            self.__delattr__('rbr_identity')
+        if hasattr(self, 'id_tensor'):
+            self.__delattr__('id_tensor')
+        # keep post bn for QAT
+        # if hasattr(self, 'bn'):
+        #     self.__delattr__('bn')
+        self.deploy = True
+
+
+
+
+
+
+
+
+
+
 class QARepVGGBlock(nn.Module):
     """
     RepVGG 块，用于构建RepVGG网络。
@@ -1494,6 +1789,11 @@ class QARepVGGBlock(nn.Module):
         # if hasattr(self, 'bn'):
         #     self.__delattr__('bn')
         self.deploy = True
+
+class DWConv(Conv):
+    # Depth-wise convolution
+    def __init__(self, c1, c2, k=1, s=1, d=1, act=True):  # ch_in, ch_out, kernel, stride, dilation, activation
+        super().__init__(c1, c2, k, s, g=math.gcd(c1, c2), d=d, act=act)
 
 class Bottleneck_QARepVGGBlock(nn.Module):
     # Standard bottleneck

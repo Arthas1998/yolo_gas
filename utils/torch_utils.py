@@ -361,10 +361,7 @@ def smart_hub_load(repo='ultralytics/yolov5', model='yolov5s', **kwargs):
 def smart_resume(ckpt, optimizer, ema=None, weights='yolov5s.pt', epochs=300, resume=True):
     # Resume training from a partially trained checkpoint
     best_fitness = 0.0
-
     start_epoch = ckpt['epoch'] + 1
-    # start_epoch = 25
-    
     if ckpt['optimizer'] is not None:
         optimizer.load_state_dict(ckpt['optimizer'])  # optimizer
         best_fitness = ckpt['best_fitness']

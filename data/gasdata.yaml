@@ -9,14 +9,12 @@
 
 # Train/val/test sets as 1) dir: path/to/imgs, 2) file: path/to/imgs.txt, or 3) list: [path/to/imgs1, path/to/imgs2, ..]
 # 训练时
-# path: ..//..//..//..//datasets/TLGDM/reset
+path: ../DATA_SET_HIT/
   # dataset root dir
 #train: Training_set_jpg.txt  # train images (relative to 'path') 128 images
-
-val: //data1//yolov5//DATA_SET_HIT//Test_set_HIT.txt  # val images (relative to 'path') 128 images
-train: //data1//yolov5//DATA_SET_HIT//Training_set_HIT.txt  # train images (relative to 'path') 128 images#val
-
-#test_small.txt  # val images (relative to 'path') 128 images
+train: Training_set_HIT.txt # val images (relative to 'path') 128 images
+val: Test_set_HIT.txt
+#val: DATA_SET_HIT//Test_set_HIT.txt  # train images (relative to 'path') 128 images#val: test_small.txt  # val images (relative to 'path') 128 images
 #val: val_experiment.txt
 #test: Testset_20240826/test_all/test.txt  # test images (optional)
 #test_20240806_experiment//test.txt
@@ -27,6 +25,7 @@ train: //data1//yolov5//DATA_SET_HIT//Training_set_HIT.txt  # train images (rela
 #train: ''
 #val: ''
 #test: test.txt
+
 
 # Classes
 names:

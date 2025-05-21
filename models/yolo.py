@@ -13,8 +13,6 @@ import platform
 import sys
 from copy import deepcopy
 from pathlib import Path
-import torch
-from torch import tensor
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[1]  # YOLOv5 root directory
@@ -61,10 +59,6 @@ class Detect(nn.Module):
             x[i] = self.m[i](x[i])  # conv
             bs, _, ny, nx = x[i].shape  # x(bs,255,20,20) to x(bs,3,20,20,85)
             x[i] = x[i].view(bs, self.na, self.no, ny, nx).permute(0, 1, 3, 4, 2).contiguous()
-                
-            if self.grid[i].device != x[i].device:
-                self.grid[i] = self.grid[i].to(x[i].device)
-                self.anchor_grid[i] = self.anchor_grid[i].to(x[i].device)
 
             if not self.training:  # inference
                 if self.dynamic or self.grid[i].shape[2:4] != x[i].shape[2:4]:
@@ -109,7 +103,7 @@ class DecoupledHead(nn.Module):
         x21 = self.reg_preds(x)
         x22 = self.obj_preds(x)
         return (x21, x22, x1)
-
+#
 class Decoupled_Detect(nn.Module):
     stride = None  # strides computed during build
     onnx_dynamic = False  # ONNX export parameter
@@ -135,10 +129,6 @@ class Decoupled_Detect(nn.Module):
         z = []  # inference output
         for i in range(self.nl):
             x[i] = self.m[i](x[i])  # conv
-
-            # if self.stride[i].device != x[i].device:
-            #     self.stride[i] = self.stride[i].to(x[i].device)  # 迁移到 CUDA
-
             bs, _, ny, nx = x[i][0].shape
             # breakpoint()
             reg = x[i][0].view(bs, self.na, 4, ny, nx).permute(0, 1, 3, 4, 2).contiguous()
@@ -148,19 +138,14 @@ class Decoupled_Detect(nn.Module):
             x[i] = torch.cat([reg, obj, cls], -1)  # 1, 18, h, w   ---> 1, 3, h, w, 6
             # x[i] = x[i].view(bs, self.na, self.no, ny, nx).permute(0, 1, 3, 4, 2).contiguous()
             # print("x[i]_detect_output:", len(x), x[1].shape, x[0].shape, x[2].shape)
-            # print("----------------", x[i].device)
             if not self.training:  # inference
                 # print(print("x[i]_______:", len(x), x[1].shape, x[0].shape, x[2].shape))
                 if self.onnx_dynamic or self.grid[i].shape[2:4] != x[i].shape[2:4]:
                     self.grid[i], self.anchor_grid[i] = self._make_grid(nx, ny, i)
                 y = x[i].sigmoid()
-                # print("**********", y.device)
                 if self.inplace:
-                    # self.stride[i] = tensor.to('cuda:0') 
                     y[..., 0:2] = (y[..., 0:2] * 2 + self.grid[i]) * self.stride[i]  # xy
-                    # print(f"y.device: {y.device}, grid[i].device: {self.grid[i].device}, stride[i].device: {self.stride[i].device}")
                     y[..., 2:4] = (y[..., 2:4] * 2) ** 2 * self.anchor_grid[i]  # wh
-                    # print(f"y.device: {y.device}, anchor_grid[i].device: {self.anchor_grid[i].device}")
                 else:  # for YOLOv5 on AWS Inferentia https://github.com/ultralytics/yolov5/pull/2953
                     xy, wh, conf = y.split((2, 2, self.nc + 1), 4)  # y.tensor_split((2, 4, 5), 4)  # torch 1.8.0
                     xy = (xy * 2 + self.grid[i]) * self.stride[i]  # xy

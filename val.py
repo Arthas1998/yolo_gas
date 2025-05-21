@@ -18,9 +18,6 @@ Usage - formats:
                               yolov5s_edgetpu.tflite     # TensorFlow Edge TPU
                               yolov5s_paddle_model       # PaddlePaddle
 """
-# python -m torch.distributed.run --nproc_per_node 2 train.py --data data/gasdata.yaml --weights 'yolov5n.pt' --cfg models/yolov5n.yaml --hyp data/hyps/hyp.gas.yaml --batch-size 16 --noplots --K 12 --epochs 25 --device 2,3
-# python train.py --data data/gasdata.yaml --weights 'yolov5n.pt' --cfg models/yolov5n.yaml --hyp data/hyps/hyp.gas.yaml --batch-size 16 --noplots --K 12 --epochs 25
-# CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun --nproc_per_node=4 train.py --data data/gasdata.yaml --weights 'yolov5n' --cfg models/yolov5n.yaml --hyp data/hyps/hyp.gas.yaml --batch-size 128 --noplots --epochs 25
 
 import argparse
 import json
@@ -150,15 +147,13 @@ def run(
     else:  # called directly
         device = select_device(opt.device, batch_size=batch_size)
 
-
-        print("check1:", [weights,device,opt.device,dnn,data,half])
-        model = DetectMultiBackend(weights, device=torch.device('cuda'), dnn=dnn, data=data, fp16=half)
         # Directories
         save_dir = increment_path(Path(project) / name, exist_ok=exist_ok)  # increment run
         (save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
         # Load model
 
         start_time = time.time()
+        model = DetectMultiBackend(weights, device=device, dnn=dnn, data=data, fp16=half)
         # model = torch.load(weights[0], map_location=device)
 
         # print("check2:", [model.stride, model.pt, model.jit, model.engine])
@@ -236,8 +231,7 @@ def run(
     loss = torch.zeros(3, device=device)
     jdict, stats, ap, ap_class = [], [], [], []
     callbacks.run('on_val_start')
-    # pbar = tqdm(dataloader, desc=s, bar_format=TQDM_BAR_FORMAT)  # progress bar
-    pbar = tqdm(dataloader, desc=s, bar_format='{l_bar}{bar:10}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]')
+    pbar = tqdm(dataloader, desc=s, bar_format=TQDM_BAR_FORMAT)  # progress bar
     negatives = []
     for batch_i, (im_orig, im, targets, paths, shapes) in enumerate(pbar):
         callbacks.run('on_val_batch_start')
@@ -527,7 +521,7 @@ def main(opt):
             # python val.py --task speed --data coco.yaml --batch 1 --weights yolov5n.pt yolov5s.pt...
             opt.conf_thres, opt.iou_thres, opt.save_json = 0.25, 0.45, False
             for opt.weights in weights:
-                run(**vars(opt), plots=False, device=torch.device('cuda'))
+                run(**vars(opt), plots=False)
 
         elif opt.task == 'study':  # speed vs mAP benchmarks
             # python val.py --task study --data coco.yaml --iou 0.7 --weights yolov5n.pt yolov5s.pt...
@@ -545,16 +539,12 @@ def main(opt):
 
 if __name__ == "__main__":
     #model_list = os.listdir("model_list")
-    
     model_list = ["Baseline_repray.pt"]
     for model in model_list:
         opt = parse_opt()
-        opt.weights = f'{model}'
+        opt.weights = f'model_list//{model}'
         print(f"______________________________{model}____________________________")
         main(opt)
-    
-    # opt = parse_opt()
-    # main(opt)
 
 
 
