@@ -39,7 +39,7 @@ from utils.general import (DATASETS_DIR, LOGGER, NUM_THREADS, TQDM_BAR_FORMAT, c
                            xywh2xyxy, xywhn2xyxy, xyxy2xywhn)
 from utils.torch_utils import torch_distributed_zero_first
 from utils.metrics import bbox_iou
-
+from decord import VideoReader, cpu
 # Parameters
 HELP_URL = 'See https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data'
 IMG_FORMATS = 'bmp', 'dng', 'jpeg', 'jpg', 'mpo', 'png', 'tif', 'tiff', 'webp', 'pfm'  # include image suffixes
@@ -1242,96 +1242,56 @@ class LoadImagesAndLabels(Dataset):
         return self.ims[i], self.im_hw0[i], self.im_hw[i]  # im, hw_original, hw_resized
 
     def load_imglist(self, i):
-        # 获取当前视频文件的路径
+        # 获取当前视频文件的路径及结束帧索引
         f = self.vid_files[i]
-
-        # 从文件名中提取结束索引
         end_index = int(f.split('____')[-1].split('.')[0])
-        imglist = []  # 初始化一个空列表，用于存储加载的图像
-
-        # 从一个大的列表中选择8帧
-        if self.K == 8:
-            # 如果K等于8，直接选择前8帧
-            selected_numbers = range(self.K)
-        else:
-            # 否则，从1到K-1中随机选择7个数字，并将0添加到列表中
-            numbers = range(1, self.K)
-            selected_numbers = random.sample(numbers, 7)
-            selected_numbers.append(0)
-            selected_numbers.sort(reverse=False)  # 对选择的数字进行排序
-
-
-        # print("check1:", [i, f, end_index,selected_numbers])  # 打印当前索引和视频文件路径，用于调试
         video_path = f.split('____')[0]
-        # # 创建VideoCapture对象
-        cap = cv2.VideoCapture(video_path)
 
-        # # 获取视频的宽度和高度
-        frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        #
-        # # 初始化一个列表来存储提取的帧
-        # tensor_2 = np.zeros((frame_height, frame_width, 8), dtype=np.uint8)
+        # 选帧逻辑：选择 self.K 帧
+        if self.K == 8:
+            selected_numbers = list(range(self.K))
+        else:
+            nums = list(range(1, self.K))
+            selected_numbers = random.sample(nums, 7) + [0]
+            selected_numbers.sort()
 
-        reversed_imglist = []
+        # 使用 Decord 打开视频
+        vr = VideoReader(video_path, ctx=cpu(0), num_threads=1)
+        total_frames = len(vr)
 
-        cap.set(cv2.CAP_PROP_POS_FRAMES, end_index - selected_numbers[-1]-1)
+        # 计算实际需要读取的全局帧索引
+        # 避免索引越界
+        frame_indices = []
+        for off in selected_numbers:
+            idx = end_index - off
+            if idx < 0:
+                idx = 0
+            if idx >= total_frames:
+                idx = total_frames - 1
+            frame_indices.append(idx)
 
+        # 批量读取并提取灰度通道 (第 0 通道)
+        batch = vr.get_batch(frame_indices).asnumpy()  # shape (K, H, W, 3)
+        reversed_imglist = [frame[:, :, 0] for frame in batch]
 
-        # count = 0
-        for frame_number in range(selected_numbers[-1] +1):
-            ret, frame = cap.read()
-            # print("ret:", cv2.CAP_PROP_POS_FRAMES,frame_number, end_index, selected_numbers, ret, frame.shape)
-
-            if (selected_numbers[-1] - frame_number) in selected_numbers:
-                # tensor_2[:, :, count] = frame[:, :, 0]
-                # count += 1
-                try:
-                    # print("checks: ", [video_path], os.path.exists(video_path), ret, cap.get(cv2.CAP_PROP_FRAME_COUNT))
-                    reversed_imglist.append(frame[:, :, 0])
-                except:
-
-                    # print("checks: ", [video_path],os.path.exists(video_path),ret,cap.get(cv2.CAP_PROP_FRAME_COUNT))
-                    # print(frame.shape)
-                    print("checks: ", [video_path])
-        # print(len(reversed_imglist))
-        # # 固定选择8帧
-        # for i in selected_numbers:
-        #     # 构造图像文件的路径，并加载图像
-        #     img_path = os.path.join(f.rsplit('/', 1)[0], '{:0>5}.jpg'.format(end_index - i))
-        #     img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)  # 以灰度模式读取图像
-        #     imglist.append(img)  # 将加载的图像添加到列表中
-
-        # 将图像列表反转
-        h0, w0 = frame_height, frame_width
-
-        #######################
-        # print(len(reversed_imglist))
-        # print(reversed_imglist[0].shape)
-        # try: reversed_imglist = stabilize_video(reversed_imglist)
-        # except: print(len(reversed_imglist),reversed_imglist[0].shape)
-        ########################
-
-
-
-
-
-        # reversed_imglist = imglist[::-1]
-        # h0, w0 = reversed_imglist[0].shape[:2]  # 获取原始图像的高度和宽度
-        # imglist_orig = copy.deepcopy(reversed_imglist)  # 创建原始图像列表的深拷贝
+        # 深拷贝原始列表
         imglist_orig = copy.deepcopy(reversed_imglist)
-        # 计算图像的缩放比例
 
+        # 计算缩放比例 r
+        h0, w0 = imglist_orig[0].shape
         r = min(self.img_size[0] / h0, self.img_size[1] / w0)
-        if r != 1:  # 如果需要缩放
-            interp = cv2.INTER_LINEAR if (self.augment or r > 1) else cv2.INTER_AREA
-            for j in range(len(reversed_imglist)):
-                # 对图像进行缩放
-                reversed_imglist[j] = cv2.resize(reversed_imglist[j], (int(w0 * r), int(h0 * r)), interpolation=interp)
 
-        # 返回原始图像列表、缩放后的图像列表、原始尺寸和缩放后的尺寸
-        return imglist_orig, reversed_imglist, (h0, w0), reversed_imglist[0].shape[:2]
+        # 使用 PIL 进行缩放
+        if r != 1:
+            new_w, new_h = int(w0 * r), int(h0 * r)
+            for j, img in enumerate(reversed_imglist):
+                pil_img = Image.fromarray(img)
+                interp = Image.BILINEAR if (self.augment or r > 1) else Image.Resampling.BOX
+                pil_resized = pil_img.resize((new_w, new_h), resample=interp)
+                reversed_imglist[j] = np.array(pil_resized)
 
+        # 返回 原始列表，缩放后列表，原始大小，缩放后大小
+        return imglist_orig, reversed_imglist, (h0, w0), reversed_imglist[0].shape
     def cache_images_to_disk(self, i):
         # Saves an image as an *.npy file for faster loading
         f = self.npy_files[i]
