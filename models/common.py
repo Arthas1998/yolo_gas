@@ -1672,42 +1672,33 @@ class QARepVGGBlock(nn.Module):
         else:
             return torch.nn.functional.pad(kernel1x1, [1, 1, 1, 1])
 
-    # def _fuse_bn_tensor(self, branch):
-    #     if branch is None:
-    #         return 0, 0
-    #     if isinstance(branch, ConvModule):
-    #         kernel = branch.conv.weight
-    #         bias = branch.conv.bias
-    #         return kernel, bias
-    #     elif isinstance(branch, nn.BatchNorm2d):
-    #         if not hasattr(self, 'id_tensor'):
-    #             input_dim = self.in_channels // self.groups
-    #             kernel_value = np.zeros((self.in_channels, input_dim, 3, 3), dtype=np.float32)
-    #             for i in range(self.in_channels):
-    #                 kernel_value[i, i % input_dim, 1, 1] = 1
-    #             self.id_tensor = torch.from_numpy(kernel_value).to(branch.weight.device)
-    #         kernel = self.id_tensor
-    #         running_mean = branch.running_mean
-    #         running_var = branch.running_var
-    #         gamma = branch.weight
-    #         beta = branch.bias
-    #         eps = branch.eps
-    #         std = (running_var + eps).sqrt()
-    #         t = (gamma / std).reshape(-1, 1, 1, 1)
-    #         return kernel * t, beta - running_mean * gamma / std
+    def _pad_3x1_to_3x3_tensor(self, kernel3x1):
+        # [out_channels, in_channels/groups, 3, 1] → pad to (3,3)
+        if isinstance(kernel3x1, int):  # 0
+            return 0
+        return F.pad(kernel3x1, [1, 1, 0, 0])  # pad width to 3
+
+    def _pad_1x3_to_3x3_tensor(self, kernel1x3):
+        # [out_channels, in_channels/groups, 1, 3] → pad to (3,3)
+        if isinstance(kernel1x3, int):  # 0
+            return 0
+        return F.pad(kernel1x3, [0, 0, 1, 1])  # pad height to 3
 
     def get_equivalent_kernel_bias(self):
         kernel3x3, bias3x3 = self._fuse_bn_tensor(self.rbr_dense)
-        kernel = kernel3x3 + self._pad_1x1_to_3x3_tensor(self.rbr_1x1.weight)
-        bias = bias3x3
+        kernel1x1, bias1x1 = self._fuse_bn_tensor(self.rbr_1x1)
+        kernel3x1, bias3x1 = self._fuse_bn_tensor(self.rbr_3x1)
+        kernel1x3, bias1x3 = self._fuse_bn_tensor(self.rbr_1x3)
+        kernelid, biasid = self._fuse_bn_tensor(self.rbr_identity)
 
-        if self.rbr_identity is not None:
-            input_dim = self.in_channels // self.groups
-            kernel_value = np.zeros((self.in_channels, input_dim, 3, 3), dtype=np.float32)
-            for i in range(self.in_channels):
-                kernel_value[i, i % input_dim, 1, 1] = 1
-            id_tensor = torch.from_numpy(kernel_value).to(self.rbr_1x1.weight.device)
-            kernel = kernel + id_tensor
+        # 融合所有分支
+        kernel = kernel3x3 \
+                 + self._pad_1x1_to_3x3_tensor(kernel1x1) \
+                 + self._pad_3x1_to_3x3_tensor(kernel3x1) \
+                 + self._pad_1x3_to_3x3_tensor(kernel1x3) \
+                 + kernelid
+
+        bias = bias3x3 + bias1x1 + bias3x1 + bias1x3 + biasid
         return kernel, bias
 
     def _fuse_extra_bn_tensor(self, kernel, bias, branch):
