@@ -21,6 +21,7 @@ import pandas as pd
 import requests
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from IPython.display import display
 from PIL import Image
 from torch.cuda import amp
@@ -1550,108 +1551,63 @@ class QARepVGGBlock(nn.Module):
         rbr_dense (nn.Sequential): 密集卷积层。
         rbr_1x1 (nn.Sequential): 1x1卷积层。
     """
-
-    def __init__(self, in_channels, out_channels, kernel_size=3,
-                 stride=1, padding=1, dilation=1, groups=1, padding_mode='zeros', deploy=False, use_se=False):
+    def __init__(
+            self,
+            in_channels,
+            out_channels,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+            dilation=1,
+            groups=1,
+            padding_mode='zeros',
+            deploy=False,
+            use_se=False
+    ):
         super(QARepVGGBlock, self).__init__()
         self.deploy = deploy
-        self.groups = groups
         self.in_channels = in_channels
         self.out_channels = out_channels
-        padding_11 = padding - kernel_size // 2
+        self.groups = groups
+        self.stride = stride
+
+        self.use_se = use_se
         self.nonlinearity = nn.SiLU()
-        if use_se:
-            self.se = SEBlock(out_channels, internal_neurons=out_channels // 16)
-        else:
-            self.se = nn.Identity()
-        if deploy:
-            self.rbr_reparam = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size,
-                                         stride=stride,
-                                         padding=padding, dilation=dilation, groups=groups, bias=True,
-                                         padding_mode=padding_mode)
 
+        if self.deploy:
+            self.rbr_reparam = nn.Conv2d(in_channels, out_channels, kernel_size=3,
+                                         stride=stride, padding=1, groups=groups, bias=True)
         else:
-            self.rbr_identity = nn.Identity() if out_channels == in_channels and stride == 1 else None
-            self.rbr_dense = conv_bn(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size,
-                                     stride=stride, padding=1, groups=groups)
-            self.rbr_1x1 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1,
-                                         stride=stride,
-                                         padding=0, groups=groups,
-                                         padding_mode=padding_mode,bias=False)
-            self.BN_out = nn.BatchNorm2d(num_features=out_channels)
+            self.rbr_identity = nn.BatchNorm2d(in_channels) if (out_channels == in_channels and stride == 1) else None
 
-    # def switch_to_deploy(self):
-    #     """
-    #     切换到部署模式。
-    #     """
-    #     if hasattr(self, 'rbr_1x1'):
-    #         kernel, bias = self.get_equivalent_kernel_bias_twice()
-    #         self.rbr_reparam = nn.Conv2d(in_channels=self.rbr_dense.conv.in_channels,
-    #                                      out_channels=self.rbr_dense.conv.out_channels,
-    #                                      kernel_size=self.rbr_dense.conv.kernel_size, stride=self.rbr_dense.conv.stride,
-    #                                      padding=self.rbr_dense.conv.padding, dilation=self.rbr_dense.conv.dilation,
-    #                                      groups=self.rbr_dense.conv.groups, bias=True)
-    #         self.rbr_reparam.weight.data = kernel
-    #         self.rbr_reparam.bias.data = bias
-    #         for para in self.parameters():
-    #             para.detach_()
-    #         self.rbr_dense = self.rbr_reparam
-    #         self.__delattr__('rbr_1x1')
-    #         if hasattr(self, 'rbr_identity'):
-    #             self.__delattr__('rbr_identity')
-    #         if hasattr(self, 'id_tensor'):
-    #             self.__delattr__('id_tensor')
-    #         if hasattr(self, 'BN_out'):
-    #             self.__delattr__('BN_out')
-    #         if hasattr(self, 'se'):
-    #             self.__delattr__('se')
-    #         if hasattr(self, 'rbr_reparam'):
-    #             self.__delattr__('rbr_reparam')
-    #
-    #         self.deploy = True
-    #
-    # def get_equivalent_kernel_bias_twice(self):
-    #     kernel, bias = self.get_equivalent_kernel_bias()
-    #     rbr_reparam_1 = nn.Conv2d(in_channels=self.rbr_dense.conv.in_channels,
-    #                                  out_channels=self.rbr_dense.conv.out_channels,
-    #                                  kernel_size=self.rbr_dense.conv.kernel_size, stride=self.rbr_dense.conv.stride,
-    #                                  padding=self.rbr_dense.conv.padding, dilation=self.rbr_dense.conv.dilation,
-    #                                  groups=self.rbr_dense.conv.groups, bias=True)
-    #     rbr_reparam_1.weight.data = kernel
-    #     rbr_reparam_1.bias.data = bias
-    #     rbr_reparam_2 = nn.Sequential()
-    #     rbr_reparam_2.add_module('conv', rbr_reparam_1)
-    #     rbr_reparam_2.add_module('bn', self.BN_out)
-    #     kernel_1, bias_1 = self._fuse_bn_tensor(rbr_reparam_2)
-    #     return kernel_1, bias_1
-    #
-    # def get_equivalent_kernel_bias(self):
-    #     """
-    #     获取等效卷积核和偏置。
-    #
-    #     Returns:
-    #         tuple: 等效卷积核和偏置。
-    #     """
-    #     kernel3x3, bias3x3 = self._fuse_bn_tensor(self.rbr_dense)
-    #     kernel1x1, bias1x1 = self._fuse_bn_tensor(self.rbr_1x1)
-    #     kernelid, biasid = self._fuse_bn_tensor(self.rbr_identity)
-    #     return kernel3x3 + self._pad_1x1_to_3x3_tensor(kernel1x1) + kernelid, bias3x3 + bias1x1 + biasid
-    #
-    # def _pad_1x1_to_3x3_tensor(self, kernel1x1):
-    #     """
-    #     将1x1卷积核填充为3x3卷积核。
-    #
-    #     Args:
-    #         kernel1x1 (Tensor): 1x1卷积核。
-    #
-    #     Returns:
-    #         Tensor: 3x3卷积核。
-    #     """
-    #     if kernel1x1 is None:
-    #         return 0
-    #     else:
-    #         return torch.nn.functional.pad(kernel1x1, [1, 1, 1, 1])
-    #
+            self.rbr_dense = conv_bn(
+                in_channels=in_channels,
+                out_channels=out_channels,
+                kernel_size=kernel_size,
+                stride=stride,
+                padding=1,
+                groups=groups
+            )
+
+            self.rbr_1x1 = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, padding=0, groups=groups, bias=False),
+                nn.BatchNorm2d(out_channels)
+            )
+
+            self.rbr_3x1 = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=(3, 1), stride=stride, padding=(1, 0), groups=groups, bias=False),
+                nn.BatchNorm2d(out_channels)
+            )
+
+            self.rbr_1x3 = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=(1, 3), stride=stride, padding=(0, 1), groups=groups, bias=False),
+                nn.BatchNorm2d(out_channels)
+            )
+
+            self.BN_out = nn.BatchNorm2d(out_channels)
+
+        self.se = SEBlock(out_channels) if use_se else nn.Identity()
+
     def _fuse_bn_tensor(self, branch):
         """
         融合批量归一化层。
@@ -1690,26 +1646,25 @@ class QARepVGGBlock(nn.Module):
             return kernel, bias
 
     def forward(self, inputs):
-        """
-        前向传播函数。
-
-        Args:
-            inputs (Tensor): 输入
-        Returns:
-                Tensor: 输出张量。
-            """
         if self.deploy:
-            return self.nonlinearity(self.BN_out(self.se(self.rbr_reparam(inputs))))
+            return self.nonlinearity(self.se(self.rbr_reparam(inputs)))
         if hasattr(self, 'rbr_reparam'):
             return self.nonlinearity(self.se(self.rbr_reparam(inputs)))
 
-        if self.rbr_identity is None:
-            id_out = 0
-        else:
-            id_out = self.rbr_identity(inputs)
+        out = 0
+        if self.rbr_dense is not None:
+            out += self.rbr_dense(inputs)
+        if self.rbr_1x1 is not None:
+            out += self.rbr_1x1(inputs)
+        if self.rbr_3x1 is not None:
+            out += self.rbr_3x1(inputs)
+        if self.rbr_1x3 is not None:
+            out += self.rbr_1x3(inputs)
+        if self.rbr_identity is not None:
+            out += self.rbr_identity(inputs)
 
-
-        return self.nonlinearity(self.BN_out(self.se(self.rbr_dense(inputs) + self.rbr_1x1(inputs) + id_out)))
+        out = self.BN_out(self.se(out))
+        return self.nonlinearity(out)
 
     def _pad_1x1_to_3x3_tensor(self, kernel1x1):
         if kernel1x1 is None:
