@@ -1,16 +1,16 @@
 export PYTHONPATH=$(pwd):$PYTHONPATH
 python train.py \
---weights='yolov5n.pt' \
---cfg='models/yolov5n.yaml' \
---data='data/gasdata_wwh.yaml' \
---hyp='data/hyps/hyp.gas-wwh.yaml' \
---epochs=25 \
---batch-size=1 \
---device='0' \
---optimizer=AdamW \
---workers=16 \
---project='/data/wuweihang/data/work_dir/yolo_gas/' \
---name='rep_1' \
---entity='wuweihang' \
---K=12 \
---save_period=10
+--weights /storage_server/disk5/wuweihang/project/yolo_gas/yolov5n.pt \
+--cfg /storage_server/disk5/wuweihang/project/yolo_gas/models/yolov5n.yaml \
+--data /storage_server/disk5/wuweihang/project/yolo_gas/data/gasdata_wwh.yaml \
+--hyp /storage_server/disk5/wuweihang/project/yolo_gas/data/hyps/hyp.gas-wwh.yaml \
+--epochs 40 \
+--batch-size 128 \
+--device 2 \
+--optimizer AdamW \
+--workers 64 \
+--project /storage_server/disk5/wuweihang/work_dir/yolo_gas \
+--name rep_cos_adamw \
+--entity wuweihang \
+--K 12 \
+--save_period 10

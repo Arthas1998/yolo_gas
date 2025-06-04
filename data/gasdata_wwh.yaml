@@ -9,8 +9,8 @@
 
 # Train/val/test sets as 1) dir: path/to/imgs, 2) file: path/to/imgs.txt, or 3) list: [path/to/imgs1, path/to/imgs2, ..]
 # 训练时
-#path: /data/wuweihang/data/work_dir/yolo_gas/DATA_SET_HIT
-path: D:\data\dataset\DATA_SET_HIT
+path: /storage_server/disk5/wuweihang/dataset/yolo_gas/
+#path: D:\data\dataset\DATA_SET_HIT
   # dataset root dir
 #train: Training_set_jpg.txt  # train images (relative to 'path') 128 images
 train: Training_set_HIT.txt # val images (relative to 'path') 128 images

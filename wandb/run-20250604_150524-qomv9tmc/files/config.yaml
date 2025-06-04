@@ -1,0 +1,148 @@
+_wandb:
+    value:
+        cli_version: 0.20.0
+        m: []
+        python_version: 3.10.16
+        t:
+            "1":
+                - 1
+                - 41
+            "2":
+                - 1
+                - 41
+            "3":
+                - 13
+                - 16
+                - 55
+            "4": 3.10.16
+            "5": 0.20.0
+            "12": 0.20.0
+            "13": linux-x86_64
+Align:
+    value: false
+K:
+    value: 12
+artifact_alias:
+    value: latest
+batch_size:
+    value: 256
+bbox_interval:
+    value: -1
+bucket:
+    value: ""
+cache:
+    value: null
+cfg:
+    value: /storage_server/disk5/wuweihang/project/yolo_gas/models/yolov5n.yaml
+cos_lr:
+    value: false
+data:
+    value: /storage_server/disk5/wuweihang/project/yolo_gas/data/gasdata_wwh.yaml
+data_dict:
+    value:
+        names:
+            "0": gas
+        nc: 1
+        path: /storage_server/disk5/wuweihang/dataset/yolo_gas/
+        train: /storage_server/disk5/wuweihang/dataset/yolo_gas/Training_set_HIT.txt
+        val: /storage_server/disk5/wuweihang/dataset/yolo_gas/Test_set_HIT.txt
+device:
+    value: "3"
+entity:
+    value: wuweihang
+epochs:
+    value: 40
+evolve:
+    value: null
+exist_ok:
+    value: false
+freeze:
+    value:
+        - 0
+hyp:
+    value:
+        anchor_t: 4
+        box: 0.08
+        cls: 0.5
+        cls_pw: 1
+        copy_paste: 0
+        degrees: 0.2
+        fl_gamma: 0
+        fliplr: 0.5
+        flipud: 0.1
+        hsv_h: 0
+        hsv_s: 0
+        hsv_v: 0
+        iou_t: 0.2
+        lr0: 0.001
+        lrf: 0.01
+        max_expand_ratio: 4
+        max_trials: 3
+        mixup: 0
+        momentum: 0.99
+        mosaic: 0.9
+        obj: 1
+        obj_pw: 1
+        overlapThresh: "1e-100"
+        paste_gas: 0.5
+        paste_gasbottle: 0.5
+        paste_negative: 0.5
+        perspective: 0
+        scale: 0.9
+        shear: 0.2
+        stdThresh: 5
+        translate: 0.2
+        warmup_bias_lr: 0.1
+        warmup_epochs: 3
+        warmup_momentum: 0.8
+        weight_decay: 0.0005
+image_weights:
+    value: false
+imgsz:
+    value:
+        - 512
+        - 640
+label_smoothing:
+    value: 0
+local_rank:
+    value: -1
+multi_scale:
+    value: false
+name:
+    value: rep_adamw_linear
+noautoanchor:
+    value: false
+noplots:
+    value: false
+nosave:
+    value: false
+noval:
+    value: false
+optimizer:
+    value: AdamW
+patience:
+    value: 100
+project:
+    value: /storage_server/disk5/wuweihang/work_dir/yolo_gas
+quad:
+    value: false
+rect:
+    value: false
+resume:
+    value: false
+save_dir:
+    value: /storage_server/disk5/wuweihang/work_dir/yolo_gas/rep_adamw_linear
+save_period:
+    value: 10
+seed:
+    value: 0
+single_cls:
+    value: false
+sync_bn:
+    value: false
+upload_dataset:
+    value: false
+weights:
+    value: /storage_server/disk5/wuweihang/project/yolo_gas/yolov5n.pt
+workers:
+    value: 64
