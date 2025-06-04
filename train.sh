@@ -8,9 +8,10 @@ python train.py \
 --batch-size 128 \
 --device 2 \
 --optimizer AdamW \
---workers 64 \
+--workers 8 \
 --project /storage_server/disk5/wuweihang/work_dir/yolo_gas \
 --name rep_cos_adamw \
 --entity wuweihang \
+--cos-lr \
 --K 12 \
 --save_period 10
