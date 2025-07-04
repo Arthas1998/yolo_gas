@@ -44,3 +44,16 @@ python train.py \
 --entity wuweihang
 --K 12
 --save_period 10
+
+--cfg /data/wuweihang/project/yolo_gas/models/yolov5n.yaml
+--data /data/wuweihang/project/yolo_gas/data/gasdata_wwh.yaml
+--hyp /data/wuweihang/project/yolo_gas/data/hyps/hyp.gas-wwh.yaml
+--epochs 25
+--batch-size 30
+--device 7
+--optimizer AdamW
+--workers 16
+--project /data/wuweihang/work_dir/yolo_gas
+--name rep_adamw_1
+--K 12
+--save_period 10

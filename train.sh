@@ -1,19 +1,32 @@
 export PYTHONPATH=$(pwd):$PYTHONPATH
-python train.py \
---weights /storage_server/disk5/wuweihang/project/yolo_gas/yolov5n.pt \
---cfg /storage_server/disk5/wuweihang/project/yolo_gas/models/yolov5n.yaml \
---data /storage_server/disk5/wuweihang/project/yolo_gas/data/gasdata_wwh.yaml \
---hyp /storage_server/disk5/wuweihang/project/yolo_gas/data/hyps/hyp.gas-wwh.yaml \
+torchrun --nproc_per_node=2 train.py \
+--cfg /data/wuweihang/project/yolo_gas/models/yolov5n.yaml \
+--data /data/wuweihang/project/yolo_gas/data/gasdata_wwh.yaml \
+--hyp /data/wuweihang/project/yolo_gas/data/hyps/hyp.gas-wwh.yaml \
 --epochs 40 \
---batch-size 128 \
---device 3 \
+--batch-size 100 \
+--device 6,7 \
 --optimizer SGD \
---workers 8 \
---project /storage_server/disk5/wuweihang/work_dir/yolo_gas \
---name rep_linear_sgd \
---entity wuweihang \
+--workers 16 \
+--project /data/wuweihang/work_dir/yolo_gas \
+--name rep_sgd_ \
 --K 12 \
---save_period 5
+--save_period 10
+
+#--weights /storage_server/disk5/wuweihang/project/yolo_gas/yolov5n.pt \
+#--cfg /storage_server/disk5/wuweihang/project/yolo_gas/models/yolov5n.yaml \
+#--data /storage_server/disk5/wuweihang/project/yolo_gas/data/gasdata_wwh.yaml \
+#--hyp /storage_server/disk5/wuweihang/project/yolo_gas/data/hyps/hyp.gas-wwh.yaml \
+#--epochs 40 \
+#--batch-size 128 \
+#--device 3 \
+#--optimizer SGD \
+#--workers 8 \
+#--project /storage_server/disk5/wuweihang/work_dir/yolo_gas \
+#--name rep_linear_sgd \
+#--entity wuweihang \
+#--K 12 \
+#--save_period 5
 
 #--weights /storage_server/disk5/wuweihang/project/yolo_gas/yolov5n.pt \
 #--cfg /storage_server/disk5/wuweihang/project/yolo_gas/models/yolov5n.yaml \
